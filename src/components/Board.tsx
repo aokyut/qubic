@@ -7,9 +7,26 @@ import "./Board.css";
 // import View3D from "./View3D";
 import View3d from "./View3D";
 import Square from "./Square";
+import SearchRow from "./SearchRow";
+import MctsRow from "./MctsRow";
 
-const testBoard = "XXOOOOXXOOXXXOXOXXXO-XXO-X--O---X-XO-O---X--X---O------------T--"
+const testBoard = "----------------------------------------------------------------B";
 const coef = 0.01;
+const mctsSearchN = 1000;
+
+type MateRow = {
+    depth: number,
+    action: number,
+}
+
+type MctsScoreArray = Array<MctsScore>;
+type MctsScore = {
+    action: number,
+    score: number,
+    q: number,
+    na: number,
+    n: number
+}
 
 function Board() {
     const [height, setHeight] = useState(window.innerHeight);
@@ -22,16 +39,26 @@ function Board() {
     const boardSize = (height < width) ? height * 0.5 : width * 0.5;
 
     const [focus, setFocus] = useState<number | null>(null);
+    const [mateRow, setMateRow] = useState<MateRow>({ depth: 0, action: -1 });
+    const [mctsRows, setMctsRows] = useState<MctsScoreArray>([]);
+    const [intervalMcts, setIntervalMcts] = useState<number | null>(null);
 
-    const onChangeFocus = (action: number) => {
+    const onChangeFocus = (action: number | null) => {
+        if (action == null) {
+            return;
+        }
         if (board[action] == "-") {
             setFocus(action);
+            console.log(action + "is set");
         } else if (board[action + 16] == "-") {
             setFocus(action + 16);
+            console.log(action + 16 + "is set");
         } else if (board[action + 32] == "-") {
             setFocus(action + 32);
+            console.log(action + 32 + "is set");
         } else if (board[action + 48] == "-") {
             setFocus(action + 48);
+            console.log(action + 48 + "is set");
         } else {
             setFocus(null);
         }
@@ -72,15 +99,106 @@ function Board() {
         window.addEventListener('resize', onResize);
     })
 
+    async function onClickAction(action: number | null) {
+        if (action == null) {
+            return;
+        }
+        const resBoard: string = await invoke("board_action", { action });
+        setBoard(resBoard);
+
+        if (resBoard[action] == "-") {
+            setFocus(action);
+            console.log(action + "is set");
+        } else if (resBoard[action + 16] == "-") {
+            setFocus(action + 16);
+            console.log(action + 16 + "is set");
+        } else if (resBoard[action + 32] == "-") {
+            setFocus(action + 32);
+            console.log(action + 32 + "is set");
+        } else if (resBoard[action + 48] == "-") {
+            setFocus(action + 48);
+            console.log(action + 48 + "is set");
+        } else {
+            setFocus(null);
+        }
+    }
+
+    async function onClickNext() {
+        setBoard(await invoke("board_next"));
+    }
+
+    async function onClickBack() {
+        setBoard(await invoke("board_back"));
+    }
+
+    async function onClickInit() {
+        setBoard(await invoke("board_init"));
+    }
+
+    async function onClickLast() {
+        setBoard(await invoke("board_last"));
+    }
+
+    const onClickMate = () => {
+        invoke("search_mate").then(res => {
+            console.log(res);
+            let castRes = res as MateRow;
+            setMateRow(castRes);
+        });
+    }
+
+    function onClickRunMcts() {
+        console.log("hoge");
+        const id = setInterval(
+            () => {
+                invoke("command_run_mcts", { searchN: mctsSearchN }).then(res => {
+                    console.log(res);
+                    let castRes = res as MctsScoreArray;
+                    setMctsRows(castRes);
+                });
+            }, 100
+        );
+        setIntervalMcts(id);
+    }
+
+    function onClickStopMcts() {
+        if (intervalMcts !== null) {
+            clearInterval(intervalMcts);
+            setIntervalMcts(null);
+        }
+    }
+
     return <div>
         {/* <Canv3d width={boardSize} height={boardSize} /> */}
         <div className="boardArea">
 
             <View3d width={boardSize} height={boardSize} board={board} rot={rot} focusIdx={focus}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
-            <Square width={height - boardSize} height={height - boardSize} rot={rot} setFocusIdx={onChangeFocus} />
+            <Square width={height - boardSize} height={height - boardSize} rot={rot} focusIdx={focus != null ? focus % 16 : null}
+                setFocusIdx={onChangeFocus} onClickSquare={() => { onClickAction(focus) }} />
         </div>
         {message}
+        <button onClick={onClickInit}>{'<<'}</button>
+        <button onClick={onClickBack}>{'<'}</button>
+        <button onClick={onClickNext}>{'>'}</button>
+        <button onClick={onClickLast}>{'>>'}</button>
+        <br />
+        <div>
+            <button onClick={onClickMate}>mate</button>
+            <SearchRow row={mateRow} forcusIdx={focus != null ? focus % 16 : null} />
+        </div>
+        <div>
+            <button onClick={onClickRunMcts}>eval</button>
+            <button onClick={onClickStopMcts} >stop eval</button>
+            {(() => {
+                let rows = [];
+                for (let i = 0; i < mctsRows?.length; i++) {
+                    let row = mctsRows[i];
+                    rows.push(<MctsRow onClick={() => { console.log("clicked board"); onClickAction(focus) }} setFocus={onChangeFocus} row={row} forcusIdx={focus != null ? focus % 16 : null} />);
+                }
+                return rows;
+            })()}
+        </div>
     </div>
 }
 

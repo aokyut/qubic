@@ -1,0 +1,38 @@
+.search_row {
+    display: flex;
+    vertical-align: center;
+    margin-top: 5px;
+    margin-bottom: 5px;
+    border-bottom: solid;
+    border-width: 1px;
+    padding-top: 6px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.search_result {
+    margin: 0 auto;
+    font-size: 20px;
+}
+
+.highlight {
+    animation-name: lighten;
+    animation-duration: 0.2s;
+    animation-timing-function: ease-in;
+    animation-delay: 0s;
+    animation-iteration-count: 1;
+    animation-direction: normal;
+    animation-fill-mode: forwards;
+}
+
+@keyframes lighten {
+    0% {
+        background-color: #ffffff00;
+        border-radius: 0px;
+    }
+
+    100% {
+        background-color: #479550ff;
+        border-radius: 20px;
+    }
+}

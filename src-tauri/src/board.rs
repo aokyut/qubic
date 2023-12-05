@@ -2,16 +2,29 @@
 use proconio::input;
 use rand::Rng;
 use std::fmt;
+use std::ops::Deref;
 use std::{
     borrow::BorrowMut,
     cell::{Ref, RefCell},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    ops::DerefMut,
+    sync::Mutex,
 };
+use tauri::State;
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Player {
-    Black,
     White,
+    Black,
+}
+
+impl Clone for Player {
+    fn clone(&self) -> Self {
+        match self {
+            Player::Black => Player::Black,
+            Player::White => Player::White,
+        }
+    }
 }
 
 impl Player {
@@ -27,6 +40,13 @@ impl Player {
             return Player::Black;
         } else {
             return Player::White;
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Player::Black => String::from("Black"),
+            Player::White => String::from("White"),
         }
     }
 }
@@ -54,12 +74,12 @@ impl Board {
             Player::Black => Board {
                 black: self.black | action_bitboard,
                 white: self.white,
-                player: self.player.next(),
+                player: Player::White,
             },
             Player::White => Board {
                 black: self.black,
                 white: self.white | action_bitboard,
-                player: self.player.next(),
+                player: Player::Black,
             },
         }
     }
@@ -79,7 +99,7 @@ impl Board {
         return Board {
             black: self.black,
             white: self.white,
-            player: self.player.next(),
+            player: self.player.clone(),
         };
     }
 
@@ -98,6 +118,30 @@ impl Board {
         }
 
         return actions;
+    }
+
+    pub fn has_mate(&self, depth: u8) -> (bool, u8) {
+        if depth == 1 {
+            for action in self.valid_actions() {
+                let next_board = self.next(action);
+                if next_board.is_win() {
+                    return (true, action);
+                }
+            }
+        } else {
+            for action in self.valid_actions() {
+                let next_board = self.next(action);
+                if next_board.is_win() {
+                    return (true, action);
+                } else {
+                    let val = -next_board._minimax_action(depth - 1);
+                    if val == 1 {
+                        return (true, action);
+                    }
+                }
+            }
+        }
+        return (false, 0);
     }
 
     pub fn minimax_action(&self, depth: u8) -> u8 {
@@ -145,6 +189,24 @@ impl Board {
         return format!("{},{}", self.black, self.white);
     }
 
+    fn to_board_string(&self) -> String {
+        let mut s = String::new();
+        for i in 0..64 {
+            if (self.black >> i) & 1 == 1 {
+                s += "O";
+            } else if (self.white >> i) & 1 == 1 {
+                s += "X";
+            } else {
+                s += "-";
+            }
+        }
+        match self.player {
+            Player::Black => s += "B",
+            Player::White => s += "W",
+        }
+        return s;
+    }
+
     fn _minimax_action(&self, depth: u8) -> i8 {
         if depth == 0 {
             return 0;
@@ -170,6 +232,54 @@ impl Board {
             Player::Black => true,
             Player::White => false,
         }
+    }
+
+    pub fn to_u128(&self) -> u128 {
+        return (self.black as u128) + ((self.white as u128) << 64);
+    }
+
+    pub fn hash(&self) -> u128 {
+        let mut bitboard = self.to_u128();
+        let mut min_bitboard = bitboard;
+
+        let hbitboard = Board::hflip(bitboard);
+        if min_bitboard > hbitboard {
+            min_bitboard = hbitboard;
+        }
+
+        for _ in 0..3 {
+            bitboard = Board::rot(bitboard);
+            if min_bitboard > bitboard {
+                min_bitboard = bitboard;
+            }
+            let hbitboard = Board::hflip(bitboard);
+            if min_bitboard > hbitboard {
+                min_bitboard = hbitboard;
+            }
+        }
+
+        return min_bitboard;
+    }
+
+    pub fn hflip(bitboard: u128) -> u128 {
+        let mask: u128 = 0x11111111111111111111111111111111;
+        return ((bitboard >> 3) & mask)
+            | ((bitboard >> 1) & mask << 1)
+            | ((bitboard << 1) & mask << 2)
+            | ((bitboard << 3) & mask << 3);
+    }
+
+    pub fn dflip(bitboard: u128) -> u128 {
+        let mask1: u128 = 0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a;
+        let mask1_: u128 = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5;
+        let mask2: u128 = 0x00cc00cc00cc00cc00cc00cc00cc00cc;
+        let mask2_: u128 = 0xcc33cc33cc33cc33cc33cc33cc33cc33;
+        let bitboard = (bitboard & mask1_) | ((bitboard >> 3) & mask1) | ((bitboard & mask1) << 3);
+        return (bitboard & mask2_) | ((bitboard >> 6) & mask2) | ((bitboard & mask2) << 6);
+    }
+
+    pub fn rot(bitboard: u128) -> u128 {
+        return Board::dflip(Board::hflip(bitboard));
     }
 }
 
@@ -232,6 +342,219 @@ fn playout(board: &Board) -> f32 {
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct MateRow {
+    depth: i32,
+    action: i32,
+}
+
+fn _search_mate(b: &Board, depth_max: u8) -> MateRow {
+    for i in 0..=((depth_max - 1) / 2) {
+        let depth = i * 2 + 1;
+        println!("depth: {} start", depth);
+        let (flag, action) = b.has_mate(depth);
+        if flag {
+            return MateRow {
+                depth: depth as i32,
+                action: action as i32,
+            };
+        }
+        println!("depth: {} end", depth);
+    }
+    return MateRow {
+        depth: 0,
+        action: -1,
+    };
+}
+
+pub struct Record {
+    moves: Vec<u8>,
+    mcts: Option<RefCell<Node>>,
+    cursor: usize,
+    initial: bool,
+}
+
+impl Record {
+    pub fn new() -> Self {
+        return Record {
+            moves: vec![],
+            cursor: 0,
+            mcts: None,
+            initial: true,
+        };
+    }
+
+    pub fn get_last_board(&self) -> Board {
+        let mut b = Board::new();
+        if self.initial || self.moves.len() == 0 {
+            return b;
+        }
+        for i in 0..=self.cursor {
+            b = b.next(self.moves[i]);
+        }
+        return b;
+    }
+
+    pub fn initial_board(&mut self) -> Board {
+        self.initial = true;
+        self.cursor = 0;
+        return self.get_last_board();
+    }
+
+    pub fn jump_last_board(&mut self) -> Board {
+        if self.moves.len() == 0 {
+            return self.get_last_board();
+        } else {
+            self.initial = false;
+            self.cursor = self.moves.len() - 1;
+            return self.get_last_board();
+        }
+    }
+
+    pub fn next(&mut self) -> Board {
+        if self.initial {
+            self.initial = false;
+        } else {
+            if self.cursor + 1 < self.moves.len() {
+                self.cursor += 1;
+            }
+        }
+        // let action = self.moves[self.cursor as usize];
+        return self.get_last_board();
+    }
+
+    pub fn back(&mut self) -> Board {
+        if self.cursor == 0 {
+            self.initial = true;
+            return self.get_last_board();
+        }
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+        return self.get_last_board();
+    }
+
+    pub fn push(&mut self, action: u8) {
+        if self.cursor + 1 < self.moves.len() {
+            for _ in 0..(self.moves.len() - 1 - self.cursor) {
+                let _ = self.moves.pop();
+            }
+        }
+        // self.moves = self.moves[0..(self.cursor as usize)];
+        if self.initial {
+            self.moves.pop();
+        }
+        self.moves.push(action);
+        self.cursor = self.moves.len() - 1;
+        self.initial = false;
+    }
+
+    pub fn push_and_board(&mut self, action: u8) -> Board {
+        self.push(action);
+        return self.get_last_board();
+    }
+
+    pub fn run_mcts_evaluate(&mut self, search_n: usize) -> Vec<Score> {
+        let current_board = self.get_last_board();
+        match &self.mcts {
+            None => {
+                let mut node = Node::new(current_board);
+                let result = node.search(50, search_n);
+                self.mcts = Some(RefCell::new(node));
+                return result;
+            }
+            Some(node) => {
+                if node.borrow().board == current_board {
+                    println!("current board is same");
+                    let result = node.borrow_mut().search(50, search_n);
+                    return result;
+                } else {
+                    let mut node = Node::new(current_board);
+                    let result = node.search(50, search_n);
+                    self.mcts = Some(RefCell::new(node));
+                    return result;
+                }
+            }
+        }
+    }
+}
+
+pub type MuRecord = Mutex<Record>;
+
+#[tauri::command]
+pub fn board_action(action: u8, record: State<'_, MuRecord>) -> String {
+    return record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .push_and_board(action)
+        .to_board_string();
+}
+
+#[tauri::command]
+pub fn board_next(record: State<'_, MuRecord>) -> String {
+    return record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .next()
+        .to_board_string();
+}
+
+#[tauri::command]
+pub fn board_back(record: State<'_, MuRecord>) -> String {
+    return record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .back()
+        .to_board_string();
+}
+
+#[tauri::command]
+pub fn board_init(record: State<'_, MuRecord>) -> String {
+    return record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .initial_board()
+        .to_board_string();
+}
+
+#[tauri::command]
+pub fn board_last(record: State<'_, MuRecord>) -> String {
+    return record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .jump_last_board()
+        .to_board_string();
+}
+
+#[tauri::command]
+pub fn search_mate(record: State<'_, MuRecord>) -> MateRow {
+    println!("search_mate called");
+    return _search_mate(&record.inner().lock().unwrap().deref().get_last_board(), 5);
+}
+
+#[tauri::command]
+pub fn command_run_mcts(search_n: usize, record: State<'_, MuRecord>) -> Vec<Score> {
+    println!("command_run_mcts called");
+    let mut scores = record
+        .inner()
+        .lock()
+        .unwrap()
+        .deref_mut()
+        .run_mcts_evaluate(search_n);
+    scores.sort_by(|a, b| b.na.partial_cmp(&a.na).unwrap());
+    return scores;
+}
+
 pub struct Node {
     board: Board,
     n: f32,
@@ -239,7 +562,7 @@ pub struct Node {
     children: HashMap<u8, RefCell<Node>>,
 }
 
-// #[derive(Debug)]
+#[derive(serde::Serialize, PartialEq, PartialOrd)]
 pub struct Score {
     pub action: u8,
     pub score: f32,
@@ -276,6 +599,15 @@ impl Node {
     pub fn search(&mut self, expand_n: usize, search_n: usize) -> Vec<Score> {
         if self.children.len() == 0 {
             self.expand();
+            for (action, node) in self.children.iter() {
+                println!(
+                    "[expand] action:{}, board:{:x}, player:{:#?}, player':{:#?}",
+                    action,
+                    node.borrow().board.black,
+                    node.borrow().board.player,
+                    self.board.player,
+                )
+            }
         }
         for _ in 0..search_n {
             self.evaluate(expand_n);
@@ -304,7 +636,7 @@ impl Node {
             self.n += 1.0;
             return 0.0;
         } else if self.children.len() == 0 {
-            let value = playout(&self.board);
+            let value = -playout(&self.board);
             self.w += value;
             self.n += 1.0;
             if self.n == expand_n as f32 {
@@ -340,8 +672,15 @@ impl Node {
 
     fn expand(&mut self) {
         let mut nodes = HashMap::new();
+        let mut set: HashSet<u128> = HashSet::new();
         for action in self.board.valid_actions() {
-            nodes.insert(action, RefCell::new(Node::new(self.board.next(action))));
+            let next_board = self.board.next(action);
+            assert_eq!(next_board.player, next_board.clone().player);
+            // println!("{:#?}, {:#?}", self.board.player, next_board.clone().player);
+            if !set.contains(&next_board.hash()) {
+                nodes.insert(action, RefCell::new(Node::new(next_board.clone())));
+                set.insert(next_board.hash());
+            }
         }
         self.children = nodes
     }

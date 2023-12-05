@@ -1,7 +1,19 @@
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, extend, ReactThreeFiber } from '@react-three/fiber';
 import { DirectionalLight, Mesh, Vector3, Color, Event } from 'three';
+import * as THREE from 'three'
 import { Plane } from '@react-three/drei';
 import { useState, useEffect, useRef } from "react";
+import { LineGeometry } from 'three/examples/jsm/Addons.js';
+
+extend({ Line_: THREE.Line })
+
+declare global {
+    namespace JSX {
+        interface IntrinsicElements {
+            line_: ReactThreeFiber.Object3DNode<THREE.Line, typeof THREE.Line>
+        }
+    }
+}
 
 const dis = 0.9;
 
@@ -24,6 +36,8 @@ const Rig = (props: RigProps) => {
 const Black = "#333333";
 const White = "white";
 const Green = "green";
+const DarkGreen = "#008800";
+const BrightGreen = "#77ff77";
 
 type BallProps = {
     position: [x: number, y: number, z: number];
@@ -47,6 +61,33 @@ const Ball: React.FC<BallProps> = (props) => {
     );
 };
 
+type LineProps = {
+    position1: Vector3;
+    position2: Vector3;
+}
+
+const Line: React.FC<LineProps> = (props) => {
+    const ref = useRef<THREE.Line>(null)
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([props.position1, props.position2]);
+    return (
+        <mesh>
+            <line_ ref={ref} geometry={lineGeometry}>
+                <lineBasicMaterial attach="material" color={'#9c88ff'} linewidth={1} linecap={'round'} linejoin={'round'} />
+            </line_>
+        </mesh>
+    )
+}
+
+const Lines = () => {
+    let lines = [];
+    for (let i = -3; i <= 3; i += 2) {
+        for (let j = -3; j <= 3; j += 2) {
+            lines.push(<Line position1={new Vector3(i, -3, j)} position2={new Vector3(i, 4, j)} />)
+        }
+    }
+    return lines;
+}
+
 type BallsProps = {
     ball: string,
     focusIdx: null | number
@@ -68,7 +109,11 @@ function Balls(props: BallsProps) {
     const x = props.focusIdx % 4;
     const y = Math.floor(props.focusIdx / 16);
     const z = Math.floor((props.focusIdx - y * 16) / 4);
-    list.push(<Ball position={[x * 2 - 3, y * 2 - 3, z * 2 - 3]} color={Green} />)
+    if (props.ball[64] == "B") {
+        list.push(<Ball position={[x * 2 - 3, y * 2 - 3, z * 2 - 3]} color={DarkGreen} />)
+    } else {
+        list.push(<Ball position={[x * 2 - 3, y * 2 - 3, z * 2 - 3]} color={BrightGreen} />)
+    }
     return list;
 }
 
@@ -96,6 +141,7 @@ function View3d(props: CanvasProps) {
             <Plane position={[0, -3.8, 0]} rotation={[-Math.PI / 2, 0, 0]} args={[10, 10]} receiveShadow>
                 <meshStandardMaterial color="#f55" />
             </Plane>
+            <Lines />
             {/* <scene background={new Color(0, 0, 255)} /> */}
         </Canvas>
     </div>

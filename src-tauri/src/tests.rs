@@ -81,6 +81,46 @@ pub mod tests {
         }
     }
 
+    #[test]
+    fn test_dflip() {
+        let bitboard: u128 = 0x000c;
+        assert_eq!(board::Board::dflip(bitboard), 0x1100);
+    }
+
+    #[test]
+    fn test_hash() {
+        let board = board::Board::new();
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let board = board.next(board::get_random(&board));
+        let hash = board.hash();
+        let mut bitboard = board.to_u128();
+        for _ in 0..4 {
+            assert!(hash <= bitboard);
+            assert!(hash <= board::Board::hflip(bitboard));
+            assert!(hash <= board::Board::dflip(bitboard));
+            bitboard = board::Board::rot(bitboard);
+        }
+    }
+
+    #[test]
+    fn test_hash2() {
+        let board = board::Board::new().next(2);
+        assert_eq!(board.hash(), 2);
+    }
+
+    #[test]
+    fn test_clone() {
+        let board = board::Board::new();
+        assert_eq!(board.is_black(), board.clone().is_black());
+    }
+
     // #[test]
     fn _bench_minimax(depth: u8) -> (u128, u128) {
         let mut b = board::Board::new();
